@@ -1,0 +1,8 @@
+touch = touch.ts
+cat = cat.ts
+code = code.ts
+ls = ls.ts
+rm = rm.ts
+reload = reload.ts
+mkdir = mkdir.ts
+jam = jam.ts

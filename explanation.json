@@ -1,0 +1,6 @@
+{
+	"type": "cli",
+	"title": "Utilities",
+	"description": "Fundamental CLI utilities for Jikno OS",
+	"shellContributionsFile": "cli/shell-contributions.alias"
+}
