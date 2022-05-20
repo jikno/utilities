@@ -1,14 +1,30 @@
-import { args, cwd, print, writeText, flags, pathUtils, remove as removeFs } from '../deps.ts'
+import { args, cwd, print, writeText, flags, pathUtils, remove as removeFs, exit } from '../deps.ts'
 import { fetchRemoteExplanationFile, parseAppId, fetchZip, loadApplicationsIndex, saveApplicationsIndex } from '../lib/application.ts'
 import { writeZip } from '../lib/zip.ts'
 
 interface JamOptions {
 	args: string[]
+	help: boolean
 }
 
-const argv = flags.parse(args)
-const options = { ...argv, args: argv._.map(arg => arg.toString()) } as JamOptions
+const argv = flags.parse(args, {
+	boolean: ['help'],
+	alias: { h: 'help' },
+})
+const options = { ...argv, args: argv._.map(arg => arg.toString()) } as unknown as JamOptions
 
+if (options.help) {
+	print(`
+jam <command> <app-id> ...[app-id]
+
+Commands:
+
+	install               Installs supplied app ids onto the disk.  If an app id with a version is supplied that version will be installed.  If no version is supplied, the latest version will be installed.
+	remove                Removes supplied app ids from the disk.  If a supplied appId is not found on the disk, it is silently ignored.
+`)
+
+	exit()
+}
 if (!options.args.length) throw new Error('Expected a command to be supplied')
 
 const command = options.args[0]
