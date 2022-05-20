@@ -1,4 +1,4 @@
-import { readJson, pathUtils } from './deps.ts'
+import { readJson, pathUtils, writeJson } from './deps.ts'
 
 export type ExplanationFile = CliExplanationFile | DesktopExplanationFile
 
@@ -49,15 +49,16 @@ export interface LoadLocalExplanationFile {
 	user: string
 }
 
-export async function loadLocalExplanationFile(params: LoadLocalExplanationFile) {
-	const load = async (type: string) =>
-		await readJson(pathUtils.join('/Applications', type, `${params.repo}/${params.user}`, 'explanation.json'))
+export async function loadLocalExplanationFile(params: LoadLocalExplanationFile): Promise<null | ExplanationFile> {
+	const shortId = `${params.user}.${params.repo}`
+	const index = await loadApplicationsIndex()
 
-	try {
-		return await load('_cli')
-	} catch (_) {
-		return await load('_desktop')
-	}
+	const meta = index[shortId]
+	if (!meta) return null
+
+	return await readJson(
+		pathUtils.join('/Applications', meta.type === 'desktop' ? '_desktop' : '_cli', `${shortId}@${meta.version}`, 'explanation.json')
+	)
 }
 
 export function parseAppId(appId: string) {
@@ -94,4 +95,14 @@ export async function fetchZip(params: FetchTarballParams) {
 	}
 
 	return await res.arrayBuffer().then(buffer => new Uint8Array(buffer))
+}
+
+export type ApplicationsIndex = Record<string, { type: 'desktop' | 'cli'; version: string }>
+
+export async function loadApplicationsIndex(): Promise<ApplicationsIndex> {
+	return await readJson(`/Applications/index.json`)
+}
+
+export async function saveApplicationsIndex(index: ApplicationsIndex) {
+	return await writeJson(`/Applications/index.json`, index)
 }

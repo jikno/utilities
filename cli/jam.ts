@@ -1,5 +1,5 @@
-import { args, cwd, print, writeText, flags, pathUtils } from '../deps.ts'
-import { fetchRemoteExplanationFile, parseAppId, fetchZip } from '../lib/application.ts'
+import { args, cwd, print, writeText, flags, pathUtils, remove as removeFs } from '../deps.ts'
+import { fetchRemoteExplanationFile, parseAppId, fetchZip, loadApplicationsIndex, saveApplicationsIndex } from '../lib/application.ts'
 import { writeZip } from '../lib/zip.ts'
 
 interface JamOptions {
@@ -11,29 +11,89 @@ const options = { ...argv, args: argv._.map(arg => arg.toString()) } as JamOptio
 
 if (!options.args.length) throw new Error('Expected a command to be supplied')
 
-const [command, value] = options.args
+const command = options.args[0]
+const values = options.args.slice(1)
 
+const countOccurrences = (array: string[], occurrence: string) => {
+	let occurrences = 0
+
+	for (const item of array) if (item === occurrence) occurrences++
+
+	return occurrences
+}
+
+const startTime = Date.now()
+let finalMessage = ``
+
+// They want us to install some packages.
+// If the package is already installed at the same version, skip it.
+// If it installed at a different version update it.
+// If a version is not supplied, use the latest version
 if (command === 'install') {
-	if (!value) throw new Error('The install command requires one argument')
+	if (!values.length) throw new Error('The install command requires at least one argument')
 
-	await install(value)
-} else {
+	const statuses: string[] = []
+	for (const value of values) statuses.push(await install(value))
+
+	const skipped = countOccurrences(statuses, 'skipped')
+	const installed = countOccurrences(statuses, 'installed')
+	const updated = countOccurrences(statuses, 'updated')
+
+	finalMessage = `Installed ${installed} application${installed === 1 ? '' : 's'}`
+	if (skipped) finalMessage += ` and skipped ${skipped} application${skipped === 1 ? '' : 's'}`
+	if (updated) finalMessage += ` and updated ${updated} application${updated === 1 ? '' : 's'}`
+}
+
+// They want us to remove some packages
+// If the package is already removed, skip it
+// If a version is supplied to a particular appId, it is ignored
+else if (command === 'remove') {
+	if (!values.length) throw new Error('The remove command requires at least one argument')
+
+	const statuses: string[] = []
+	for (const value of values) statuses.push(await remove(value))
+
+	const removed = countOccurrences(statuses, 'removed')
+	const skipped = countOccurrences(statuses, 'skipped')
+
+	finalMessage = `Removed ${removed} application${removed === 1 ? '' : 's'}`
+	if (skipped) finalMessage += ` and skipped ${skipped} application${skipped === 1 ? '' : 's'}`
+}
+
+// They supplied a command that is not implemented
+else {
 	throw new Error(`Unknown command: ${command}`)
 }
 
-async function install(appId: string) {
-	const { repo, user, version } = parseAppId(appId)
-	if (!version) throw new Error('You must select a version for now')
+if (!finalMessage.length) finalMessage += `Completed`
+print(`${finalMessage} in ${Date.now() - startTime}ms.`)
 
+/**
+ * Installs an app id and returns the status of the operation:
+ * 'installed', 'skipped' (already installed), and 'updated' (already installed, but it was a different version)
+ */
+async function install(appId: string) {
+	const { repo, user, version: suppliedVersion } = parseAppId(appId)
 	const { auth, name: latestVersion } = await getAuthAndLatestVersion(user, repo, null)
 
-	if (version !== latestVersion)
-		print(`Warning: ${version} is not the latest version of application.  Latest version is ${latestVersion}.`)
+	if (suppliedVersion && suppliedVersion !== latestVersion)
+		print(`Warning: ${suppliedVersion} is not the latest version of application.  Latest version is ${latestVersion}.`)
+
+	const version = suppliedVersion || latestVersion
+	const shortId = `${user}.${repo}`
+
+	const index = await loadApplicationsIndex()
+	const existingMeta = index[shortId]
+	if (existingMeta) {
+		if (existingMeta.version === version) return 'skipped'
+
+		print(`Application ${shortId} is already installed.  Updating to supplied version.`)
+	}
 
 	const explanation = await fetchRemoteExplanationFile({ repo, user, version, auth })
 	const zip = await fetchZip({ repo, user, version, auth })
 
-	const path = pathUtils.join(cwd, 'Application', explanation.type === 'desktop' ? '_desktop' : '_cli', `${user}.${repo}`)
+	const path = pathUtils.join(cwd, 'Application', explanation.type === 'desktop' ? '_desktop' : '_cli', `${shortId}@${version}`)
 
 	await writeZip(zip, path, {
 		// Removes the first directory from the resulting path
@@ -41,6 +101,44 @@ async function install(appId: string) {
 	})
 
 	await writeText(pathUtils.join(path, '__version'), version)
+
+	index[shortId] = { type: explanation.type, version }
+	await saveApplicationsIndex(index)
+
+	if (existingMeta) return 'updated'
+
+	return 'installed'
+}
+
+/**
+ * Removes an appId from the system.  Returns the status of the operation:
+ * 'removed', 'skipped' (already removed)
+ */
+async function remove(appId: string) {
+	const { repo, user } = parseAppId(appId)
+	const shortId = `${user}.${repo}`
+
+	const index = await loadApplicationsIndex()
+
+	const applicationMeta = index[shortId]
+	if (!applicationMeta) {
+		print(`Application ${shortId} is not installed.`)
+		return 'skipped'
+	}
+
+	delete index[shortId]
+	await saveApplicationsIndex(index)
+
+	const path = pathUtils.join(
+		cwd,
+		'Application',
+		applicationMeta.type === 'desktop' ? '_desktop' : '_cli',
+		`${shortId}@${applicationMeta.version}`
+	)
+
+	await removeFs(path, { recursive: true })
+
+	return 'removed'
 }
 
 async function getAuthAndLatestVersion(user: string, repo: string, auth: string | null) {
