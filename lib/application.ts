@@ -100,7 +100,12 @@ export async function fetchZip(params: FetchTarballParams) {
 export type ApplicationsIndex = Record<string, { type: 'desktop' | 'cli'; version: string }>
 
 export async function loadApplicationsIndex(): Promise<ApplicationsIndex> {
-	return await readJson(`/Applications/index.json`)
+	try {
+		return await readJson(`/Applications/index.json`)
+	} catch (_) {
+		// If there is not an /Applications/index.json, return en empty index
+		return {}
+	}
 }
 
 export async function saveApplicationsIndex(index: ApplicationsIndex) {
