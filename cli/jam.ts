@@ -185,9 +185,17 @@ async function getAuthAndLatestVersion(user: string, repo: string, auth: string 
 }
 
 async function ensureAliasIncludes(aliasPath: string, includeFile: string) {
-	let alias = await readText(aliasPath)
+	let alias: string | null = null
 
-	if (!alias.includes(`@include ${includeFile}`)) {
+	try {
+		alias = await readText(aliasPath)
+	} catch (_) {
+		// if the alias file does not exist, silently create it
+	}
+
+	if (!alias) {
+		alias = `@include ${includeFile}`
+	} else if (!alias.includes(`@include ${includeFile}`)) {
 		alias += `\n@include ${includeFile}`
 	}
 
