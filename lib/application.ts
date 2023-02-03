@@ -1,4 +1,4 @@
-import { readJson, pathUtils, writeJson } from './deps.ts'
+import { readJson, join, writeJson } from '../deps.ts'
 
 export type ExplanationFile = CliExplanationFile | DesktopExplanationFile
 
@@ -57,7 +57,7 @@ export async function loadLocalExplanationFile(params: LoadLocalExplanationFile)
 	if (!meta) return null
 
 	return await readJson(
-		pathUtils.join('/Applications', meta.type === 'desktop' ? '_desktop' : '_cli', `${shortId}@${meta.version}`, 'explanation.json')
+		join('/Applications', meta.type === 'desktop' ? '_desktop' : '_cli', `${shortId}@${meta.version}`, 'explanation.json')
 	)
 }
 

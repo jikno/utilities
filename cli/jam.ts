@@ -1,4 +1,4 @@
-import { args, print, writeText, flags, pathUtils, remove as removeFs, exit, readText } from '../deps.ts'
+import { args, print, writeText, flags, join, remove as removeFs, exit, readText } from '../deps.ts'
 import { fetchRemoteExplanationFile, parseAppId, fetchZip, loadApplicationsIndex, saveApplicationsIndex } from '../lib/application.ts'
 import { writeZip } from '../lib/zip.ts'
 
@@ -110,19 +110,19 @@ async function install(appId: string) {
 	const explanation = await fetchRemoteExplanationFile({ repo, user, version, auth })
 	const zip = await fetchZip({ repo, user, version, auth })
 
-	const path = pathUtils.join('/Applications', explanation.type === 'desktop' ? '_desktop' : '_cli', `${longId}`)
+	const path = join('/Applications', explanation.type === 'desktop' ? '_desktop' : '_cli', `${longId}`)
 
 	await writeZip(zip, path, {
 		// Removes the first directory from the resulting path
 		mapFilename: file => file.split('/').slice(1).join('/'),
 	})
 
-	await writeText(pathUtils.join(path, '__version'), version)
+	await writeText(join(path, '__version'), version)
 
 	if (explanation.type === 'cli') {
-		const cliContributionsPath = pathUtils.join('_cli', longId, explanation.shellContributionsFile)
+		const cliContributionsPath = join('_cli', longId, explanation.shellContributionsFile)
 
-		await ensureAliasIncludes(pathUtils.join(`/Applications`, '_shell-contributions.alias'), cliContributionsPath)
+		await ensureAliasIncludes(join(`/Applications`, '_shell-contributions.alias'), cliContributionsPath)
 		await ensureAliasIncludes('.shell.alias', '/Applications/_shell-contributions.alias')
 	}
 
@@ -153,11 +153,7 @@ async function remove(appId: string) {
 	delete index[shortId]
 	await saveApplicationsIndex(index)
 
-	const path = pathUtils.join(
-		'/Application',
-		applicationMeta.type === 'desktop' ? '_desktop' : '_cli',
-		`${shortId}@${applicationMeta.version}`
-	)
+	const path = join('/Application', applicationMeta.type === 'desktop' ? '_desktop' : '_cli', `${shortId}@${applicationMeta.version}`)
 
 	await removeFs(path, { recursive: true })
 
@@ -185,9 +181,17 @@ async function getAuthAndLatestVersion(user: string, repo: string, auth: string 
 }
 
 async function ensureAliasIncludes(aliasPath: string, includeFile: string) {
-	let alias = await readText(aliasPath)
+	let alias: string | null = null
 
-	if (!alias.includes(`@include ${includeFile}`)) {
+	try {
+		alias = await readText(aliasPath)
+	} catch (_) {
+		// if the alias file does not exist, silently create it
+	}
+
+	if (!alias) {
+		alias = `@include ${includeFile}`
+	} else if (!alias.includes(`@include ${includeFile}`)) {
 		alias += `\n@include ${includeFile}`
 	}
 
